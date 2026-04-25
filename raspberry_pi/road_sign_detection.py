@@ -24,7 +24,7 @@ status = {
 }
 
 # =========================
-# HTML 页面
+# HTML
 # =========================
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -32,7 +32,7 @@ HTML_PAGE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚗 Robot Car Live</title>
+    <title>Robot Car Live</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -157,11 +157,10 @@ time.sleep(2)
 
 # =========================
 # Camera
-# ⭐ 提高分辨率，扩大视野
 # =========================
 picam2 = Picamera2()
 picam2.configure(picam2.create_video_configuration(
-    main={"size": (480, 360)},              # ⭐ 原来320x240，提高到480x360
+    main={"size": (480, 360)},
     transform=Transform(hflip=1, vflip=1)
 ))
 picam2.start()
@@ -175,11 +174,10 @@ print("System started")
 threading.Thread(target=run_flask, daemon=True).start()
 
 # =========================
-# ⭐ 参数（提高sensitivity关键）
+# Parameters
 # =========================
-# PD控制参数
-Kp = 2.0        # 比例（P）
-Kd = 0.8        # 微分（D），预测误差变化，防过冲
+Kp = 2.0        
+Kd = 0.8        
 base_speed = 80
 MIN_SPEED = 75
 MAX_SPEED = 180
@@ -195,9 +193,8 @@ stop_until = 0
 prev_error = 0
 prev_left = 0
 prev_right = 0
-d_error = 0     # 微分项
+d_error = 0
 
-# ⭐ 用于记录上一次看到的车道位置（防止丢失车道）
 last_left_base = None
 last_right_base = None
 
@@ -212,42 +209,36 @@ while True:
     height, width = frame.shape[:2]
 
     # =========================
-    # ⭐ ROI 扩大：取画面下方50%（原来40%）
-    # 视野更大，更早看到弯道
+    # Lane Detection
     # =========================
-    roi_y1 = int(height * 0.45)            # ⭐ 原来0.6，现在取更多画面
+    roi_y1 = int(height * 0.45) # adjust the roi
     roi = frame[roi_y1:height, :]
 
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (7, 7), 0)   # ⭐ 增大blur减少噪点
+    blur = cv2.GaussianBlur(gray, (7, 7), 0)
 
-    # ⭐ 白底黑线：用INV让黑线变白色，histogram才能找到线
-    _, thresh = cv2.threshold(blur, 80, 255, cv2.THRESH_BINARY)
+    _, thresh = cv2.threshold(blur, 80, 255, cv2.THRESH_BINARY) # add _INV if black line
 
-    # 形态学处理去噪
     kernel = np.ones((3, 3), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
-    # ⭐ 只取ROI底部1/3来计算histogram（离车最近，最准确）
     roi_height = thresh.shape[0]
     thresh_bottom = thresh[int(roi_height * 0.67):, :]
     histogram = np.sum(thresh_bottom, axis=0)
     midpoint = width // 2
     frame_center = width // 2
 
-    # ⭐ 双黑线追踪：找左线右边缘 和 右线左边缘（朝向路中心）
+    # Find the left and right edge of the line
     if histogram.max() > 500:
-        # 左半边：找非零列，取最右边的 = 左黑线右边缘
         left_nonzero = np.nonzero(histogram[:midpoint])[0]
         if len(left_nonzero) > 0:
-            left_base = int(left_nonzero[-1])   # 最右边的白色列
+            left_base = int(left_nonzero[-1]) 
         else:
             left_base = last_left_base if last_left_base else midpoint // 2
 
-        # 右半边：找非零列，取最左边的 = 右黑线左边缘
         right_nonzero = np.nonzero(histogram[midpoint:])[0]
         if len(right_nonzero) > 0:
-            right_base = int(right_nonzero[0]) + midpoint  # 最左边的白色列
+            right_base = int(right_nonzero[0]) + midpoint
         else:
             right_base = last_right_base if last_right_base else midpoint + midpoint // 2
 
@@ -272,37 +263,30 @@ while True:
     roi_frame = roi_display.copy()
 
     # =========================
-    # PD Error 计算
+    # PD Error
     # =========================
-    raw_error = -(lane_center - frame_center)
-    error     = 0.6 * prev_error + 0.4 * raw_error  # 平滑
-    d_error   = error - prev_error                   # 微分项（误差变化速度）
+    raw_error  = frame_center - lane_center
+    error      = 0.6 * prev_error + 0.4 * raw_error
+    d_error    = error - prev_error                 
     prev_error = error
 
     # =========================
-    # PD 控制逻辑
+    # PD Control
     # =========================
     if abs(error) > PIVOT_THRESHOLD:
-        # 极端转弯：原地pivot
         if error > 0:
             left_speed, right_speed = MAX_SPEED, -100
         else:
             left_speed, right_speed = -100, MAX_SPEED
-
     else:
-        # PD correction：P项纠正位置，D项预测过冲
         correction = int(Kp * error + Kd * d_error * 10)
 
         left_speed  = base_speed - correction
         right_speed = base_speed + correction
 
-        # 限制最大速度
         left_speed  = min(MAX_SPEED, left_speed)
         right_speed = min(MAX_SPEED, right_speed)
 
-        # ⭐ 每个轮子独立保护：有速度就保证MIN_SPEED
-        # 外轮永远不会低于MIN_SPEED
-        # 内轮只有在correction极大时才会降到MIN_SPEED
         left_speed  = max(MIN_SPEED, left_speed)
         right_speed = max(MIN_SPEED, right_speed)
 
@@ -342,7 +326,7 @@ while True:
     # STOP
     # =========================
     if detected == "STOP":
-        stop_until = time.time() + 2.0
+        stop_until = time.time() + 0.5
 
     if time.time() < stop_until:
         left_speed  = 0
@@ -356,7 +340,7 @@ while True:
         prev_left, prev_right = left_speed, right_speed
 
     # =========================
-    # Debug 画线
+    # Debug
     # =========================
     y_top = roi_y1
     cv2.line(annotated, (left_base,   y_top), (left_base,   height), (255, 0, 0),   2)
@@ -364,7 +348,6 @@ while True:
     cv2.line(annotated, (lane_center, y_top), (lane_center, height), (0, 255, 0),   2)
     cv2.line(annotated, (frame_center,y_top), (frame_center,height), (0, 0, 255),   2)
 
-    # ⭐ 画ROI边界线，方便调整
     cv2.line(annotated, (0, roi_y1), (width, roi_y1), (255, 255, 0), 1)
 
     cv2.putText(annotated, f"Err:{int(error)}",              (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0),   2)
