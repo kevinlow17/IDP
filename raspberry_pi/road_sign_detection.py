@@ -176,14 +176,14 @@ threading.Thread(target=run_flask, daemon=True).start()
 # =========================
 # Parameters
 # =========================
-Kp = 2.0        
-Kd = 0.8        
-base_speed = 80
-MIN_SPEED = 75
-MAX_SPEED = 180
+Kp = 1.8        
+Kd = 1.05 # 85       
+base_speed = 90
+MIN_SPEED = 75 #90
+MAX_SPEED = 180 #150
 
 TURN_THRESHOLD = 10
-PIVOT_THRESHOLD = 50
+PIVOT_THRESHOLD = 60 
 
 frame_count = 0
 detect_counter = 0
@@ -275,9 +275,9 @@ while True:
     # =========================
     if abs(error) > PIVOT_THRESHOLD:
         if error > 0:
-            left_speed, right_speed = MAX_SPEED, -100
+            left_speed, right_speed = 220, -70
         else:
-            left_speed, right_speed = -100, MAX_SPEED
+            left_speed, right_speed = -70, 220
     else:
         correction = int(Kp * error + Kd * d_error * 10)
 
@@ -296,7 +296,7 @@ while True:
     frame_count += 1
     detected = None
 
-    if frame_count % 4 == 0:
+    if frame_count % 1 == 0:
         results = model(frame, imgsz=160, verbose=False)
         boxes = results[0].boxes
 
@@ -326,7 +326,7 @@ while True:
     # STOP
     # =========================
     if detected == "STOP":
-        stop_until = time.time() + 0.5
+        stop_until = time.time() + 1
 
     if time.time() < stop_until:
         left_speed  = 0
@@ -376,5 +376,6 @@ ser.write(b"0,0\n")
 ser.close()
 picam2.stop()
 cv2.destroyAllWindows()
+
 
 
