@@ -305,7 +305,7 @@ while True:
             cls    = int(boxes.cls[best_i])
             conf   = float(boxes.conf[best_i])
 
-            if conf > 0.6:
+            if conf > 0.4:
                 detect_counter += 1
                 if detect_counter >= DETECT_THRESHOLD:
                     detect_counter = 0
